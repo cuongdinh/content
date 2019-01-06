@@ -1,0 +1,68 @@
+commonfields:
+  id: FormatURLs
+  version: 21
+name: FormatURLs
+script: |
+  import json
+
+  def decode_safe_url(command, url):
+      # Calling a command - returns a list of one or more entries
+      resCmdName = demisto.executeCommand(command, url)
+      return resCmdName
+
+  def process_entry(resCmdName):
+      res = ''
+      entry = resCmdName[0]
+      if isError(entry):
+          # If it's not an error we recognize - send entry returned from the command back to the war room as-is.
+          res = entry
+      else:
+          myData = json.loads(demisto.get(entry, 'Contents'))
+          # Log myData to war room - for debugging. May remove this later in production script
+          # demisto.log(str(myData))
+          if myData:
+              res = myData['decoded_url']
+          else:
+              res = ({
+                  "Type": entryTypes["error"],
+                  "ContentsFormat": formats["text"],
+                  "Contents": "Could not extract result list from response: " + json.dumps(entry["Contents"])
+              })
+      return res
+
+
+  try:
+      # Constant and mandatory arguments
+      proofpoint_urls = ['https://urldefense.proofpoint.com/v1/url?u=', 'https://urldefense.proofpoint.com/v2/url?u=']
+      dArgs = {}
+      url = demisto.args()["url"]
+      res = ''
+      resCmdName = None
+      if proofpoint_urls[0] in url or proofpoint_urls[1] in url:
+          dArgs['url'] = url
+          resCmdName = decode_safe_url("ProofpointDecodeURL", dArgs)
+          res = process_entry(resCmdName)
+      else:
+          dArgs['input'] = url
+          res = decode_safe_url("UnEscapeURLs", dArgs)
+
+      demisto.results(res)
+  except Exception as ex:
+      demisto.results({
+          "Type": entryTypes["error"],
+          "ContentsFormat": formats["text"],
+          "Contents": "Error occurred while parsing output from command. Exception info:\n" + str(ex) + "\n\nInvalid output:\n" + str(resCmdName)
+      })
+type: python
+tags:
+- indicator-format
+comment: Wrapper for UnEscapeURLs and ProofpointDecodeURL. Returns decoded proofpoint urls and formats unescaped urls.
+enabled: true
+args:
+- name: url
+  required: true
+  default: true
+  description: URL to decode
+scripttarget: 0
+runonce: false
+runas: DBotWeakRole
